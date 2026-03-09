@@ -1,0 +1,14 @@
+package com.yupi.springbootinit.model.dto.user;
+
+import java.io.Serializable;
+import lombok.Data;
+
+@Data
+public class UserAddRequest implements Serializable {
+    private String userName;
+    private String userAccount;
+    private String userAvatar;
+    private String userProfile;
+    private String userRole;
+    private static final long serialVersionUID = 1L;
+}

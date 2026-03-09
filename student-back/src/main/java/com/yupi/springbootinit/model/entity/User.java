@@ -1,0 +1,120 @@
+package com.yupi.springbootinit.model.entity;
+
+import com.baomidou.mybatisplus.annotation.IdType;
+import com.baomidou.mybatisplus.annotation.TableField;
+import com.baomidou.mybatisplus.annotation.TableId;
+import com.baomidou.mybatisplus.annotation.TableLogic;
+import com.baomidou.mybatisplus.annotation.TableName;
+import java.io.Serializable;
+import java.util.Date;
+import lombok.Data;
+
+/**
+ * 用户
+ *
+ *<!-- @author <a href="https://github.com/a2350413966">曹宏福</a> --> *
+ */
+@TableName(value = "user")
+@Data
+public class User implements Serializable {
+
+    /**
+     * id
+     */
+    @TableId(type = IdType.ASSIGN_ID)
+    private Long id;
+
+    /**
+     * 用户账号
+     */
+    private String userAccount;
+
+    /**
+     * 用户密码
+     */
+    private String userPassword;
+
+    /**
+     * 开放平台id
+     */
+    private String unionId;
+
+    /**
+     * 公众号openId
+     */
+    private String mpOpenId;
+
+    /**
+     * 用户昵称
+     */
+    private String userName;
+
+    /**
+     * 用户头像
+     */
+    private String userAvatar;
+
+    /**
+     * 用户简介
+     */
+    private String userProfile;
+
+    /**
+     * 学号
+     */
+    private String studentId;
+
+    /**
+     * 真实姓名
+     */
+    private String realName;
+
+    /**
+     * 性别 0-保密 1-男 2-女
+     */
+    private Integer gender;
+
+    /**
+     * 联系电话
+     */
+    private String phone;
+
+    /**
+     * 所属学院
+     */
+    private String college;
+
+    /**
+     * 所属专业
+     */
+    private String major;
+
+    /**
+     * 入学年份(如2023)
+     */
+    private Integer enrollmentYear;
+
+    /**
+     * 用户角色：user/admin/ban
+     */
+    private String userRole;
+
+    /**
+     * 创建时间
+     */
+    private Date createTime;
+
+    /**
+     * 更新时间
+     */
+    private Date updateTime;
+
+    /**
+     * 是否删除
+     */
+    @TableLogic
+    private Integer isDelete;
+
+    @TableField(exist = false)
+    private static final long serialVersionUID = 1L;
+}
