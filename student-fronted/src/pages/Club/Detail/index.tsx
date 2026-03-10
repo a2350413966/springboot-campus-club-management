@@ -11,7 +11,7 @@ import {
     ProFormText,
     ProFormTextArea,
 } from '@ant-design/pro-components';
-import { history, useModel, useParams } from '@umijs/max';
+import { history, request, useModel, useParams } from '@umijs/max';
 import {
     Avatar,
     Badge,
@@ -19,6 +19,7 @@ import {
     Card,
     Col,
     Descriptions,
+    Dropdown,
     Empty,
     List,
     message,
@@ -31,6 +32,7 @@ import {
     Table,
     Tag,
     Tabs,
+    Tooltip,
     Typography,
     Upload,
 } from 'antd';
@@ -54,6 +56,15 @@ const statusConfig: Record<number, { label: string; color: string; badge: 'proce
     0: { label: '招募中', color: '#52c41a', badge: 'processing' },
     1: { label: '已满员', color: '#999', badge: 'default' },
     2: { label: '已解散', color: '#ff4d4f', badge: 'error' },
+};
+
+/** 角色中文映射 */
+const ROLE_LABEL: Record<string, { text: string; color: string }> = {
+    leader: { text: '会长', color: 'gold' },
+    minister: { text: '部长', color: 'blue' },
+    vice_leader: { text: '副会长', color: 'purple' },
+    admin: { text: '管理员', color: 'volcano' },
+    member: { text: '成员', color: 'default' },
 };
 
 type MemberItem = {
@@ -135,7 +146,7 @@ const ClubDetailPage: React.FC = () => {
     const { id } = useParams<{ id: string }>();
     const { initialState } = useModel('@@initialState');
     const currentUser = initialState?.currentUser;
-    const isAdmin = currentUser?.userRole === 'admin';
+    const isSysAdmin = currentUser?.userRole === 'admin';
 
     const [club, setClub] = useState<API.ClubVO | null>(null);
     const [members, setMembers] = useState<MemberItem[]>([]);
@@ -144,6 +155,7 @@ const ClubDetailPage: React.FC = () => {
     const [loadingMembers, setLoadingMembers] = useState(true);
     const [loadingRequests, setLoadingRequests] = useState(false);
     const [reviewingId, setReviewingId] = useState<string | null>(null);
+    const [roleChangingId, setRoleChangingId] = useState<string | null>(null);
 
     // 编辑弹窗
     const [editOpen, setEditOpen] = useState(false);
@@ -154,9 +166,21 @@ const ClubDetailPage: React.FC = () => {
     // 申请加入弹窗
     const [joinOpen, setJoinOpen] = useState(false);
 
-    const canEdit = club && (isAdmin || club.leaderId === String(currentUser?.id) || club.userId === String(currentUser?.id));
-    const canQuit = club?.joined && club.leaderId !== String(currentUser?.id);
-    const isLeaderOrAdmin = club && (isAdmin || club.leaderId === String(currentUser?.id));
+    // ─── 当前用户在本社团的角色 ───────────────────────────────────────────────
+    // 从 club.myRole 获取（后端 getClubVO 已回填）
+    const myClubRole: string | null = (club as any)?.myRole ?? null;
+
+    // 权限推断（由低到高：member < minister < leader < sysAdmin）
+    const isLeader = club ? club.leaderId === String(currentUser?.id) : false;
+    const isMinister = myClubRole === 'minister';
+    // "有审批权"：会长 / 部长 / 系统管理员
+    const canReview = isLeader || isMinister || isSysAdmin;
+    // "可编辑社团"：会长 / 系统管理员
+    const canEdit = club ? (isSysAdmin || isLeader) : false;
+    // "可设角色"（设置/取消部长）：会长 / 系统管理员
+    const canSetRole = canEdit;
+    // 是否可退出（成员本人，且不是会长）
+    const canQuit = club?.joined && !isLeader;
 
     const fetchClub = async () => {
         if (!id) return;
@@ -198,9 +222,10 @@ const ClubDetailPage: React.FC = () => {
 
     // 当 club 加载完且有权限时才拉申请列表
     useEffect(() => {
-        if (club && isLeaderOrAdmin) fetchJoinRequests();
-    }, [club?.id]);
+        if (club && canReview) fetchJoinRequests();
+    }, [club?.id, myClubRole]);
 
+    /** 审核加入申请 */
     const handleReview = async (requestId: string, status: 1 | 2) => {
         setReviewingId(requestId);
         try {
@@ -214,16 +239,17 @@ const ClubDetailPage: React.FC = () => {
             if (json.code !== 0) throw new Error(json.message);
             message.success(status === 1 ? '已通过申请！' : '已拒绝申请');
             fetchJoinRequests();
-            if (status === 1) fetchMembers(); // 通过后刷新成员列表
-            fetchClub(); // 刷新成员数
+            if (status === 1) fetchMembers();
+            fetchClub();
         } catch (e: any) { message.error(`操作失败：${e.message}`); }
         finally { setReviewingId(null); }
     };
 
+    /** 转让会长 */
     const handleTransfer = (newLeaderId: string) => {
         Modal.confirm({
             title: '确认转让会长职务？',
-            content: '转让后您将降级为普通成员，并且可能失去社团管理权限。该操作不可撤销，请谨慎！',
+            content: '转让后您将降级为普通成员，该操作不可撤销，请谨慎！',
             okText: '确认转让',
             okButtonProps: { danger: true },
             onOk: async () => {
@@ -236,11 +262,37 @@ const ClubDetailPage: React.FC = () => {
                     const json = await res.json();
                     if (json.code !== 0) throw new Error(json.message);
                     message.success('已成功转让会长职务！');
-                    fetchClub(); // 重新拉取社团详情，自己的身份也会刷新
-                    fetchMembers(); // 刷新成员榜单
-                } catch (e: any) {
-                    message.error(`转让失败：${e.message}`);
-                }
+                    fetchClub();
+                    fetchMembers();
+                } catch (e: any) { message.error(`转让失败：${e.message}`); }
+            },
+        });
+    };
+
+    /** ★ 新增：设置/取消部长 */
+    const handleSetRole = async (targetUserId: string, targetRole: 'minister' | 'member', memberName: string) => {
+        const actionText = targetRole === 'minister' ? `设置「${memberName}」为部长` : `取消「${memberName}」的部长职务`;
+        Modal.confirm({
+            title: `确认${actionText}？`,
+            content: targetRole === 'minister'
+                ? '部长可以审核入社申请和代表社团发布活动。'
+                : '取消后该成员将恢复为普通成员，失去审批和发布活动权限。',
+            okText: '确认',
+            onOk: async () => {
+                setRoleChangingId(targetUserId);
+                try {
+                    const res = await request('/api/club/role/set', {
+                        method: 'POST',
+                        params: { clubId: id, targetUserId, role: targetRole },
+                    });
+                    if (res.code === 0) {
+                        message.success(`${actionText}成功！`);
+                        fetchMembers();
+                    } else {
+                        message.error(res.message || '操作失败');
+                    }
+                } catch (e: any) { message.error(`操作失败：${e.message}`); }
+                finally { setRoleChangingId(null); }
             },
         });
     };
@@ -344,44 +396,82 @@ const ClubDetailPage: React.FC = () => {
                     {loadingMembers ? <Skeleton active paragraph={{ rows: 4 }} /> : members.length === 0
                         ? <Empty description="暂无成员" image={Empty.PRESENTED_IMAGE_SIMPLE} />
                         : (
-                            <List dataSource={members} renderItem={(m) => (
-                                <List.Item style={{ padding: '10px 0' }}
-                                    actions={[
-                                        // 仅当我是真·在职会长（以接口鉴权为准），且我当前在审视别人（不是自己）时展示转让按钮
-                                        club.leaderId === String(currentUser?.id) && String(m.userId) !== String(currentUser?.id) && (
-                                            <Button type="primary" danger ghost size="small" style={{ borderRadius: 6, display: 'flex', alignItems: 'center', gap: 4 }}
-                                                onClick={() => handleTransfer(String(m.userId))}>
-                                                👑 委任新社长
-                                            </Button>
-                                        )
-                                    ].filter(Boolean) as React.ReactNode[]}
-                                >
-                                    <List.Item.Meta
-                                        avatar={<Avatar src={m.userAvatar} style={{ background: style.color }}>{!m.userAvatar && m.userName?.[0]}</Avatar>}
-                                        title={<Space>
-                                            <span>{m.userName}</span>
-                                            {m.role === 'leader' && <Tag color="gold" style={{ fontSize: 11 }}>会长</Tag>}
-                                            {m.role === 'admin' && <Tag color="blue" style={{ fontSize: 11 }}>管理员</Tag>}
-                                        </Space>}
-                                        description={
-                                            <Space direction="vertical" size={2}>
-                                                <Text type="secondary" style={{ fontSize: 13 }}>
-                                                    {m.realName ? `${m.realName} (${m.college || ''} ${m.major || ''})` : '神秘同学'}
-                                                    {m.studentId && ` · 学号: ${m.studentId}`}
-                                                </Text>
-                                                <Text type="secondary" style={{ fontSize: 12 }}>
-                                                    {m.joinTime ? `加入于 ${new Date(m.joinTime).toLocaleDateString()}` : ''}
-                                                </Text>
-                                            </Space>
-                                        }
-                                    />
-                                </List.Item>
-                            )} />
+                            <List dataSource={members} renderItem={(m) => {
+                                const roleInfo = ROLE_LABEL[m.role] ?? { text: m.role, color: 'default' };
+                                const isMe = String(m.userId) === String(currentUser?.id);
+                                const isTargetLeader = m.role === 'leader';
+                                const isTargetMinister = m.role === 'minister';
+
+                                // 构建成员操作菜单（会长操作区）
+                                const menuItems: any[] = [];
+                                if (canSetRole && !isMe && !isTargetLeader) {
+                                    if (isTargetMinister) {
+                                        menuItems.push({
+                                            key: 'unset-minister',
+                                            label: '取消部长职务',
+                                            onClick: () => handleSetRole(String(m.userId), 'member', m.userName),
+                                        });
+                                    } else {
+                                        menuItems.push({
+                                            key: 'set-minister',
+                                            label: '🎖️ 任命为部长',
+                                            onClick: () => handleSetRole(String(m.userId), 'minister', m.userName),
+                                        });
+                                    }
+                                    if (isLeader) {
+                                        menuItems.push({
+                                            key: 'transfer',
+                                            label: '👑 委任为新会长',
+                                            danger: true,
+                                            onClick: () => handleTransfer(String(m.userId)),
+                                        });
+                                    }
+                                }
+
+                                return (
+                                    <List.Item
+                                        style={{ padding: '12px 0' }}
+                                        actions={[
+                                            menuItems.length > 0 && (
+                                                <Dropdown menu={{ items: menuItems }} trigger={['click']}>
+                                                    <Button
+                                                        size="small"
+                                                        loading={roleChangingId === String(m.userId)}
+                                                    >
+                                                        管理 ▾
+                                                    </Button>
+                                                </Dropdown>
+                                            ),
+                                        ].filter(Boolean) as React.ReactNode[]}
+                                    >
+                                        <List.Item.Meta
+                                            avatar={<Avatar src={m.userAvatar} style={{ background: style.color }}>{!m.userAvatar && m.userName?.[0]}</Avatar>}
+                                            title={<Space>
+                                                <span>{m.userName}</span>
+                                                <Tag color={roleInfo.color} style={{ fontSize: 11 }}>{roleInfo.text}</Tag>
+                                                {isMe && <Tag style={{ fontSize: 11 }}>我</Tag>}
+                                            </Space>}
+                                            description={
+                                                <Space direction="vertical" size={2}>
+                                                    <Text type="secondary" style={{ fontSize: 13 }}>
+                                                        {m.realName ? `${m.realName} (${m.college || ''} ${m.major || ''})` : '神秘同学'}
+                                                        {m.studentId && ` · 学号: ${m.studentId}`}
+                                                    </Text>
+                                                    <Text type="secondary" style={{ fontSize: 12 }}>
+                                                        {m.joinTime ? `加入于 ${new Date(m.joinTime).toLocaleDateString()}` : ''}
+                                                    </Text>
+                                                </Space>
+                                            }
+                                        />
+                                    </List.Item>
+                                );
+                            }} />
                         )}
                 </Card>
             ),
         },
-        ...(isLeaderOrAdmin ? [{
+        // ★ 关键：入社审批 Tab 现在向 minister（部长）也开放
+        ...(canReview ? [{
             key: 'requests',
             label: (
                 <span>
@@ -389,6 +479,7 @@ const ClubDetailPage: React.FC = () => {
                     {joinRequests.length > 0 && (
                         <Tag color="red" style={{ marginLeft: 6, fontSize: 11 }}>{joinRequests.length}</Tag>
                     )}
+                    {isMinister && !isLeader && <Tag color="blue" style={{ marginLeft: 4, fontSize: 10 }}>部长权限</Tag>}
                 </span>
             ),
             children: (
@@ -435,14 +526,17 @@ const ClubDetailPage: React.FC = () => {
                                 <Text type="secondary">👑 会长：{club.leaderName ?? '未知'}</Text>
                             </Space>
                         </div>
+                        {/* ★ 右侧按钮区根据角色动态渲染 */}
                         <Space direction="vertical" style={{ flexShrink: 0 }}>
                             {canEdit && <Button type="primary" onClick={openEdit}>✏️ 编辑社团</Button>}
                             {!club.joined && club.status === 0 && currentUser && (
                                 <Button onClick={() => setJoinOpen(true)}>申请加入</Button>
                             )}
                             {canQuit && <Button danger onClick={handleQuit}>退出社团</Button>}
-                            {club.joined && club.leaderId === String(currentUser?.id) && <Tag color="gold">👑 我是会长</Tag>}
-                            {club.joined && club.leaderId !== String(currentUser?.id) && <Tag color="blue">✅ 已加入</Tag>}
+                            {/* 角色徽章 */}
+                            {club.joined && isLeader && <Tag color="gold">👑 我是会长</Tag>}
+                            {club.joined && isMinister && !isLeader && <Tag color="blue">🎖️ 我是部长</Tag>}
+                            {club.joined && !isLeader && !isMinister && <Tag color="green">✅ 已加入</Tag>}
                         </Space>
                     </div>
                 </div>

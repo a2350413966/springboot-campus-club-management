@@ -73,8 +73,11 @@ export const MessageBell: React.FC = () => {
         }
         setDrawerVisible(false);
         if (msg.relatedId) {
-            history.push(`/post/detail/${msg.relatedId}`);
-            setDrawerVisible(false); // Assuming setOpen was a typo for setDrawerVisible
+            if (['CLUB_REVIEW', 'JOIN_REVIEW', 'ROLE_CHANGE', 'TRANSFER_LEADER'].includes(msg.type)) {
+                history.push(`/club/detail/${msg.relatedId}`);
+            } else {
+                history.push(`/post/detail/${msg.relatedId}`);
+            }
         }
     };
 
@@ -154,6 +157,11 @@ export const MessageBell: React.FC = () => {
                         </List.Item>
                     )}
                 />
+                <div style={{ textAlign: 'center', marginTop: 16, paddingTop: 16, borderTop: '1px solid #f0f0f0' }}>
+                    <Button type="link" onClick={() => { setDrawerVisible(false); history.push('/message'); }}>
+                        查看全部消息记录 ➔
+                    </Button>
+                </div>
             </Drawer>
         </>
     );

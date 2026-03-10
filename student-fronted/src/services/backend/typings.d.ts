@@ -512,4 +512,30 @@ declare namespace API {
     data?: ActivityVO;
     message?: string;
   };
+
+  type Message = {
+    id?: string;
+    type?: string;
+    title?: string;
+    content?: string;
+    senderId?: string;
+    receiverId?: string;
+    relatedId?: string;
+    isRead?: number;
+    createTime?: string;
+  };
+
+  type PageMessage_ = {
+    current?: string;
+    pages?: string;
+    records?: Message[];
+    size?: string;
+    total?: string;
+  };
+
+  type BaseResponsePageMessage = {
+    code?: number;
+    data?: PageMessage_;
+    message?: string;
+  };
 }

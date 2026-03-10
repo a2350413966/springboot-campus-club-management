@@ -238,7 +238,9 @@ const ActivityPage: React.FC = () => {
         if (!isLogin) return;
         try {
             const res = await listClubVOByPageUsingPost({ current: 1, pageSize: 50 });
-            const clubs = (res.data?.records ?? []).filter((c) => c.myRole === 'leader' || c.myRole === 'admin');
+            const clubs = (res.data?.records ?? []).filter(
+                (c) => c.myRole === 'leader' || c.myRole === 'admin' || c.myRole === 'minister'
+            );
             setMyClubs(clubs.map((c) => ({ label: c.clubName ?? '', value: c.id ?? '' })));
         } catch { /* 忽略 */ }
     };

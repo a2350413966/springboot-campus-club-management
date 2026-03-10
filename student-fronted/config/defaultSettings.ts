@@ -17,7 +17,7 @@ const Settings: ProLayoutProps & {
     colorWeak: false,
     title: '校园社团管理系统',
     pwa: false,
-    logo: 'https://gw.alipayobjects.com/zos/rmsportal/KDpgvguMpGfqaHPjicRK.svg',
+    logo: '/logo.png',
     iconfontUrl: '',
 };
 
